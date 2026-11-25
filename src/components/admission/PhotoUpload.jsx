@@ -7,6 +7,41 @@ import toast from 'react-hot-toast';
 const OUT_W = 800;
 const OUT_H = 1000;
 
+// Phone photos are huge (4000px+). Crop to 4:5 portrait, shrink and compress so uploads are fast.
+const processImage = async (file) => {
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  } catch {
+    bitmap = await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = URL.createObjectURL(file);
+    });
+  }
+  const iw = bitmap.width || bitmap.naturalWidth;
+  const ih = bitmap.height || bitmap.naturalHeight;
+  const target = OUT_W / OUT_H;
+  let sw = iw;
+  let sh = ih;
+  let sx = 0;
+  let sy = 0;
+  if (iw / ih > target) {
+    sw = ih * target;
+    sx = (iw - sw) / 2;
+  } else {
+    sh = iw / target;
+    sy = (ih - sh) / 3; // keep more of the top: faces stay in frame
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = OUT_W;
+  canvas.height = OUT_H;
+  canvas.getContext('2d').drawImage(bitmap, sx, sy, sw, sh, 0, 0, OUT_W, OUT_H);
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.85));
+  return new File([blob], `member-${Date.now()}.jpg`, { type: 'image/jpeg' });
+};
+
 const CameraSheet = ({ onCapture, onClose, onFallback }) => {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
@@ -151,10 +186,15 @@ const CameraSheet = ({ onCapture, onClose, onFallback }) => {
   );
 };
 
-// Camera only — no gallery. If the browser can't open the camera, falls back to the phone's camera app.
+// Camera only (no gallery).
+//  - Phone / tablet: opens the phone's own camera app directly (no site permission needed, works in the installed app).
+//  - Desktop: opens the webcam inside the app; if that fails, a file picker.
+const isTouchDevice = () => window.matchMedia?.('(pointer: coarse)').matches;
+
 const PhotoUpload = ({ onChange, initialPreview }) => {
   const [preview, setPreview] = useState(initialPreview || null);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [processing, setProcessing] = useState(false);
   const fallbackRef = useRef(null);
 
   const handleCaptured = (file, url) => {
@@ -163,23 +203,36 @@ const PhotoUpload = ({ onChange, initialPreview }) => {
     setCameraOpen(false);
   };
 
-  const handleFallbackFile = (e) => {
+  const handleNativeFile = async (e) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
-    onChange(file);
-    setPreview(URL.createObjectURL(file));
+    setProcessing(true);
+    try {
+      const out = await processImage(file);
+      onChange(out);
+      setPreview(URL.createObjectURL(out));
+    } catch {
+      toast.error('Could not read the photo, please try again.');
+    } finally {
+      setProcessing(false);
+    }
   };
 
   const clear = () => {
     setPreview(null);
     onChange(null);
-    if (fallbackRef.current) fallbackRef.current.value = '';
   };
 
   const openFallback = useCallback(() => {
     setCameraOpen(false);
     fallbackRef.current?.click();
   }, []);
+
+  const openCamera = () => {
+    if (isTouchDevice()) fallbackRef.current?.click();
+    else setCameraOpen(true);
+  };
 
   return (
     <div>
@@ -190,10 +243,12 @@ const PhotoUpload = ({ onChange, initialPreview }) => {
       <div className="flex items-end gap-4">
         <button
           type="button"
-          onClick={() => setCameraOpen(true)}
+          onClick={openCamera}
           className="relative h-40 w-32 rounded-xl border-2 border-dashed border-navy-600 hover:border-accent bg-navy-900 flex items-center justify-center overflow-hidden transition-colors"
         >
-          {preview ? (
+          {processing ? (
+            <span className="text-xs text-gray-400">Processing…</span>
+          ) : preview ? (
             <img src={preview} alt="Member" className="h-full w-full object-cover object-top" />
           ) : (
             <div className="text-center text-gray-400">
@@ -205,7 +260,7 @@ const PhotoUpload = ({ onChange, initialPreview }) => {
 
         {preview && (
           <div className="flex flex-col gap-2">
-            <button type="button" onClick={() => setCameraOpen(true)} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-navy-600 text-sm text-gray-200 hover:border-accent">
+            <button type="button" onClick={openCamera} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-navy-600 text-sm text-gray-200 hover:border-accent">
               <RefreshCw size={15} /> Retake
             </button>
             <button type="button" onClick={clear} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-navy-600 text-sm text-gray-400 hover:border-red-500 hover:text-red-400">
@@ -215,8 +270,8 @@ const PhotoUpload = ({ onChange, initialPreview }) => {
         )}
       </div>
 
-      {/* Fallback: opens the device camera app directly (capture attr), never the gallery picker on phones. */}
-      <input ref={fallbackRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFallbackFile} />
+      {/* capture="environment" = straight into the rear camera app (flip inside the camera app if needed). */}
+      <input ref={fallbackRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleNativeFile} />
 
       {cameraOpen && <CameraSheet onCapture={handleCaptured} onClose={() => setCameraOpen(false)} onFallback={openFallback} />}
     </div>
