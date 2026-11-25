@@ -20,6 +20,3 @@ npm run build
 - Env var: `VITE_API_BASE_URL=https://<your-backend>/api`
 - SPA rewrites are included (`vercel.json`, `public/_redirects`).
 - HTTPS is required for "Install app" — Vercel/Netlify give it automatically.
-# frontend_jp
-# frontend_jp
-# frontend_jp

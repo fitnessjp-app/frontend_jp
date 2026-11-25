@@ -23,7 +23,7 @@ const statusTabs = [
 const field = 'w-full px-3 py-2.5 rounded-lg bg-navy-900 border border-navy-700 text-white focus:outline-none focus:border-accent';
 const label = 'block text-xs font-medium text-gray-400 mb-1';
 
-const ADVANCED_KEYS = ['batch', 'plan', 'gender', 'admittedFrom', 'admittedTo', 'expiryFrom', 'expiryTo', 'ageMin', 'ageMax'];
+const ADVANCED_KEYS = ['batch', 'plan', 'type', 'admittedFrom', 'admittedTo', 'expiryFrom', 'expiryTo', 'ageMin', 'ageMax'];
 
 const MemberFilters = ({ params, counts, plans, onChange, onReset }) => {
   const [open, setOpen] = useState(false);
@@ -108,12 +108,11 @@ const MemberFilters = ({ params, counts, plans, onChange, onReset }) => {
             </select>
           </div>
           <div>
-            <label className={label}>Gender</label>
-            <select value={params.gender || ''} onChange={(e) => onChange({ gender: e.target.value })} className={field}>
+            <label className={label}>Member type</label>
+            <select value={params.type || ''} onChange={(e) => onChange({ type: e.target.value })} className={field}>
               <option value="">All</option>
-              <option value="male">Male</option>
-              <option value="female">Female</option>
-              <option value="other">Other</option>
+              <option value="new">New (via app)</option>
+              <option value="old">Old members</option>
             </select>
           </div>
           <div className="grid grid-cols-2 gap-2">

@@ -16,7 +16,7 @@ import RenewModal from '../components/records/RenewModal.jsx';
 import AdmissionForm from '../components/admission/AdmissionForm.jsx';
 
 const FILTER_KEYS = [
-  'search', 'status', 'batch', 'plan', 'gender',
+  'search', 'status', 'batch', 'plan', 'type',
   'admittedFrom', 'admittedTo', 'expiryFrom', 'expiryTo', 'ageMin', 'ageMax', 'sort',
 ];
 

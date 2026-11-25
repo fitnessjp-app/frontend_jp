@@ -49,7 +49,10 @@ const MemberProfileModal = ({ isOpen, onClose, memberId }) => {
               <PhotoViewer src={member.photo} name={member.name} className="h-36 w-28 sm:h-40 sm:w-32 rounded-2xl" iconSize={36} />
               <div className="min-w-0 flex-1 flex flex-col justify-center gap-2">
                 <h3 className="text-xl font-semibold text-white break-words">{member.name}</h3>
-                <div><StatusBadge member={member} /></div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <StatusBadge member={member} />
+                  {member.isOldMember && <span className="text-xs px-2 py-1 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/30">Old member</span>}
+                </div>
                 <p className="text-gray-400 text-sm capitalize inline-flex items-center gap-1.5">
                   {member.batch === 'morning' ? <Sun size={14} /> : <Moon size={14} />} {member.batch} batch
                 </p>
@@ -60,11 +63,9 @@ const MemberProfileModal = ({ isOpen, onClose, memberId }) => {
             {/* Contact */}
             <div className="space-y-2.5 bg-navy-900 border border-navy-700 rounded-xl p-4">
               <Info icon={Phone}><a href={`tel:${member.phone}`} className="hover:text-accent">{member.phone}</a></Info>
-              <Info icon={Mail}>{member.email}</Info>
+              {member.email && <Info icon={Mail}>{member.email}</Info>}
               {member.address && <Info icon={MapPin}>{member.address}</Info>}
-              {(member.gender || member.age) && (
-                <Info icon={User}><span className="capitalize">{member.gender}</span>{member.gender && member.age ? ' · ' : ''}{member.age ? `${member.age} yrs` : ''}</Info>
-              )}
+              {member.age && <Info icon={User}>{member.age} yrs</Info>}
             </div>
 
             {/* Plan */}
@@ -87,7 +88,7 @@ const MemberProfileModal = ({ isOpen, onClose, memberId }) => {
             <div>
               <h4 className="text-white font-semibold text-sm mb-3">Payment History (Cash)</h4>
               {payments.length === 0 ? (
-                <EmptyState title="No payments recorded" />
+                <EmptyState title="No payments recorded" description={member.isOldMember ? 'Old member: renew to record the first payment.' : ''} />
               ) : (
                 <div className="space-y-2">
                   {payments.map((p) => (
