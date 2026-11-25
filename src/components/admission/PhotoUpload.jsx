@@ -42,7 +42,7 @@ const processImage = async (file) => {
   return new File([blob], `member-${Date.now()}.jpg`, { type: 'image/jpeg' });
 };
 
-const CameraSheet = ({ onCapture, onClose, onFallback }) => {
+const CameraSheet = ({ onCapture, onClose, onFail }) => {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const [facing, setFacing] = useState('environment'); // rear camera first: you photograph the member
@@ -70,18 +70,13 @@ const CameraSheet = ({ onCapture, onClose, onFallback }) => {
       setReady(true);
     } catch (err) {
       stop();
-      toast.error(
-        err?.name === 'NotAllowedError'
-          ? 'Camera permission blocked. Allow camera for this site in browser settings.'
-          : 'Could not open the camera.'
-      );
-      onFallback();
+      onFail(err?.name === 'NotAllowedError' || err?.name === 'SecurityError' ? 'blocked' : 'error');
     }
-  }, [onFallback]);
+  }, [onFail]);
 
   useEffect(() => {
     if (!navigator.mediaDevices?.getUserMedia) {
-      onFallback();
+      onFail('unsupported');
       return undefined;
     }
     start(facing);
@@ -186,16 +181,66 @@ const CameraSheet = ({ onCapture, onClose, onFallback }) => {
   );
 };
 
-// Camera only (no gallery).
-//  - Phone / tablet: opens the phone's own camera app directly (no site permission needed, works in the installed app).
-//  - Desktop: opens the webcam inside the app; if that fails, a file picker.
-const isTouchDevice = () => window.matchMedia?.('(pointer: coarse)').matches;
+// Shown only when the in-app camera can't open (permission blocked on this device). Never leaves the admin stuck.
+const CameraProblemSheet = ({ reason, onRetry, onPhoneCamera, onPick, onClose }) => {
+  const [steps, setSteps] = useState(false);
+  return createPortal(
+    <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center sm:p-4">
+      <div className="absolute inset-0 bg-black/70" onClick={onClose} />
+      <div className="relative w-full sm:max-w-md bg-navy-800 border border-navy-700 rounded-t-2xl sm:rounded-2xl p-5 pb-safe animate-slide-up">
+        <div className="flex items-start gap-3">
+          <div className="h-11 w-11 shrink-0 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center"><Camera size={22} /></div>
+          <div className="min-w-0 flex-1">
+            <p className="text-white font-semibold">{reason === 'unsupported' ? 'Camera not available here' : 'Camera is blocked for this app'}</p>
+            <p className="text-sm text-gray-400 mt-0.5">Take the photo another way — the admission is not blocked.</p>
+          </div>
+          <button onClick={onClose} className="p-1 text-gray-400" aria-label="Close"><X size={20} /></button>
+        </div>
 
+        <div className="grid gap-2.5 mt-5">
+          <button onClick={onPhoneCamera} className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-accent text-white font-medium">
+            <Camera size={18} /> Open phone camera
+          </button>
+          <button onClick={onPick} className="w-full py-3.5 rounded-xl border border-navy-600 text-gray-200 font-medium">
+            Choose a photo
+          </button>
+          {reason === 'blocked' && (
+            <button onClick={onRetry} className="w-full py-3 rounded-xl text-sm text-gray-300 inline-flex items-center justify-center gap-2">
+              <RefreshCw size={15} /> Try the in-app camera again
+            </button>
+          )}
+        </div>
+
+        {reason === 'blocked' && (
+          <div className="mt-3 border-t border-navy-700 pt-3">
+            <button onClick={() => setSteps((v) => !v)} className="text-sm text-accent">
+              {steps ? 'Hide steps' : 'Fix it once for good'}
+            </button>
+            {steps && (
+              <ol className="mt-2 text-sm text-gray-400 space-y-1 list-decimal pl-5">
+                <li>Open the <b className="text-gray-200">Chrome</b> app → ⋮ menu → <b className="text-gray-200">Settings</b></li>
+                <li><b className="text-gray-200">Site settings</b> → <b className="text-gray-200">Camera</b></li>
+                <li>Find this site in the list → set to <b className="text-gray-200">Allow</b></li>
+                <li>Close this app completely and open it again</li>
+              </ol>
+            )}
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body
+  );
+};
+
+// Photo is taken inside the app (camera opens straight away, no gallery).
+// If the camera is blocked on a device, a small sheet offers the phone's camera app / photo picker so nobody gets stuck.
 const PhotoUpload = ({ onChange, initialPreview }) => {
   const [preview, setPreview] = useState(initialPreview || null);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [problem, setProblem] = useState(null); // 'blocked' | 'unsupported' | 'error'
   const [processing, setProcessing] = useState(false);
-  const fallbackRef = useRef(null);
+  const captureRef = useRef(null); // phone camera app
+  const pickRef = useRef(null); // photo picker
 
   const handleCaptured = (file, url) => {
     onChange(file);
@@ -224,14 +269,21 @@ const PhotoUpload = ({ onChange, initialPreview }) => {
     onChange(null);
   };
 
-  const openFallback = useCallback(() => {
+  const handleFail = useCallback((reason) => {
     setCameraOpen(false);
-    fallbackRef.current?.click();
+    setProblem(reason);
   }, []);
 
-  const openCamera = () => {
-    if (isTouchDevice()) fallbackRef.current?.click();
-    else setCameraOpen(true);
+  const openCamera = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) return setProblem('unsupported');
+    // Already blocked on this device? Skip straight to the options instead of a dead end.
+    try {
+      const status = await navigator.permissions?.query({ name: 'camera' });
+      if (status?.state === 'denied') return setProblem('blocked');
+    } catch {
+      /* permissions API not available - just try the camera */
+    }
+    setCameraOpen(true);
   };
 
   return (
@@ -270,10 +322,20 @@ const PhotoUpload = ({ onChange, initialPreview }) => {
         )}
       </div>
 
-      {/* capture="environment" = straight into the rear camera app (flip inside the camera app if needed). */}
-      <input ref={fallbackRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleNativeFile} />
+      <input ref={captureRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleNativeFile} />
+      <input ref={pickRef} type="file" accept="image/*" className="hidden" onChange={handleNativeFile} />
 
-      {cameraOpen && <CameraSheet onCapture={handleCaptured} onClose={() => setCameraOpen(false)} onFallback={openFallback} />}
+      {cameraOpen && <CameraSheet onCapture={handleCaptured} onClose={() => setCameraOpen(false)} onFail={handleFail} />}
+
+      {problem && (
+        <CameraProblemSheet
+          reason={problem}
+          onClose={() => setProblem(null)}
+          onRetry={() => { setProblem(null); setCameraOpen(true); }}
+          onPhoneCamera={() => { setProblem(null); captureRef.current?.click(); }}
+          onPick={() => { setProblem(null); pickRef.current?.click(); }}
+        />
+      )}
     </div>
   );
 };
